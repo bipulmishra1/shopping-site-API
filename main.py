@@ -7,8 +7,14 @@ from typing import Optional
 
 
 
-file_path = "C:/Users/bimal/searchAPI/data/Flipkart_Mobiles.csv"  # Correct path
-df = pd.read_csv(file_path)
+# Change the path to match Render's directory structure
+file_path = os.path.join(os.path.dirname(__file__), "data", "Flipkart_Mobiles.csv")
+
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    df = None
+    print(f"Error: CSV file not found at {file_path}. Ensure it's included in GitHub.")
 
 
 
