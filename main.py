@@ -4,6 +4,7 @@ import pandas as pd
 import uvicorn
 from pydantic import BaseModel
 from typing import Optional
+from fastapi_utils.tasks import repeat_every
 
 
 
@@ -21,6 +22,12 @@ except FileNotFoundError:
 
 # Initialize FastAPI app
 app = FastAPI()
+
+# Keep-Alive Task (Prevents Shutdown)
+@app.on_event("startup")
+@repeat_every(seconds=600)  # Runs every 10 minutes
+def keep_alive():
+    print("Keeping server active...")
 
 @app.get("/home")
 def home():
