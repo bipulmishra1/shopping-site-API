@@ -7,6 +7,7 @@ from typing import Optional
 from fastapi_utils.tasks import repeat_every
 from passlib.context import CryptContext
 from jose import JWTError, jwt
+import requests
 from datetime import datetime, timedelta
 
 # Initialize FastAPI app
@@ -109,5 +110,16 @@ def login(user: User):
     access_token = create_access_token(data={"sub": user.username}, expires_delta=timedelta(minutes=60))
     return {"access_token": access_token, "token_type": "bearer"}
 
+# ------------------- Test Login Request -------------------
 
+def test_login():
+    url = "http://127.0.0.1:8000/login"
+    data = {
+        "username": "test_user",
+        "password": "test123"
+    }
+    response = requests.post(url, json=data)
+    print(response.json())  # Should return JWT token
 
+# Uncomment below to test login from a script:
+# test_login()
