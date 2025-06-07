@@ -1,24 +1,13 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Depends, HTTPException
 import os
 import pandas as pd
 import uvicorn
 from pydantic import BaseModel
 from typing import Optional
 from fastapi_utils.tasks import repeat_every
-
-
-
-# Change the path to match Render's directory structure
-file_path = os.path.join(os.path.dirname(__file__), "data", "Flipkart_Mobiles.csv")
-
-try:
-    df = pd.read_csv(file_path)
-except FileNotFoundError:
-    df = None
-    print(f"Error: CSV file not found at {file_path}. Ensure it's included in GitHub.")
-
-
-
+from passlib.context import CryptContext
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -28,6 +17,17 @@ app = FastAPI()
 @repeat_every(seconds=600)  # Runs every 10 minutes
 def keep_alive():
     print("Keeping server active...")
+
+# ------------------- Shopping Search API -------------------
+
+# Load CSV file
+file_path = os.path.join(os.path.dirname(__file__), "data", "Flipkart_Mobiles.csv")
+
+try:
+    df = pd.read_csv(file_path)
+except FileNotFoundError:
+    df = None
+    print(f"Error: CSV file not found at {file_path}. Ensure it's included in GitHub.")
 
 @app.get("/home")
 def home():
@@ -42,70 +42,72 @@ def search_mobiles(
     order: str = Query("asc", description="Sort order: 'asc' or 'desc'"),
     limit: int = Query(10, description="Number of results per page")
 ):
+    if df is None:
+        return {"error": "CSV file missing or not loaded correctly."}
+
     result = df.copy()
 
-    # Apply filters based on query parameters (case-insensitive, partial matches)
-    if brand:
-        result = result[result["Brand"].str.contains(brand, case=False, na=False)]
-    if model:
-        result = result[result["Model"].str.contains(model, case=False, na=False)]
-    if color:
-        result = result[result["Color"].str.contains(color, case=False, na=False)]
+    filters = {"Brand": brand, "Model": model, "Color": color}
+    for column, value in filters.items():
+        if value:
+            result = result[result[column].str.contains(value, case=False, na=False)]
 
-    # Sort results
     if sort_by in ["price", "rating"]:
         column = "Selling Price" if sort_by == "price" else "Rating"
         result = result.sort_values(by=column, ascending=(order == "asc"))
 
-    # Limit results (pagination)
-    result = result.head(limit)
+    result = result.head(limit).dropna()
 
-    result = result.dropna()  # Remove rows with NaN values
-
-
-    print(result.head())
     return result.to_dict(orient="records")
 
+# ------------------- User Authentication API -------------------
 
-# # class FilterItems(BaseModel):
-# #     brand: str 
-# #     model: Optional[str] = None
-# #     color: Optional[str] = None 
-# #     sort_by: Optional[str] = None 
-# #     order: Optional[str] = None 
-# #     limit: Optional[int] = 10 
+# Secret key & algorithm for JWT
+SECRET_KEY = "your-secret-key"
+ALGORITHM = "HS256"
 
+# Password hashing setup
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Simulated user database
+fake_users_db = {
+    "test_user": {
+        "username": "test_user",
+        "full_name": "Test User",
+        "hashed_password": pwd_context.hash("test123"),
+        "disabled": False
+    }
+}
 
-# @app.post("/search/")
-# def search_mobiles_post(body:FilterItems):
-#     result = df.copy()
+# Pydantic models
+class User(BaseModel):
+    username: str
+    password: str
 
-#     # Apply filters based on query parameters (case-insensitive, partial matches)
-#     if body.brand:
-#         result = result[result["Brand"].str.contains(body.brand, case=False, na=False)]
-#     if body.model:
-#         result = result[result["Model"].str.contains(body.model, case=False, na=False)]
-#     if body.color:
-#         result = result[result["Color"].str.contains(body.color, case=False, na=False)]
+class Token(BaseModel):
+    access_token: str
+    token_type: str
 
-#     # Sort results
-#     if body.sort_by in ["price", "rating"]:
-#         column = "Selling Price" if body.sort_by == "price" else "Rating"
-#         result = result.sort_values(by=column, ascending=(body.order == "asc"))
+def verify_password(plain_password, hashed_password):
+    return pwd_context.verify(plain_password, hashed_password)
 
-#     # Limit results (pagination)
-#     result = result.head(body.limit)
+def get_user(username: str):
+    return fake_users_db.get(username)
 
-#     # Handle case where no matches are found
-#     if result.empty:
-#         return {"message": "No matches found for the given filters"}
+def create_access_token(data: dict, expires_delta: timedelta):
+    to_encode = data.copy()
+    expire = datetime.utcnow() + expires_delta
+    to_encode.update({"exp": expire})
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-#     return result.to_dict(orient="records")
-
-
-# if __name__== "__main__":
-#     uvicorn.run(app, host ="127.0.0.1",port= 8000 )
+@app.post("/login", response_model=Token)
+def login(user: User):
+    db_user = get_user(user.username)
+    if not db_user or not verify_password(user.password, db_user["hashed_password"]):
+        raise HTTPException(status_code=400, detail="Invalid username or password")
+    
+    access_token = create_access_token(data={"sub": user.username}, expires_delta=timedelta(minutes=60))
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 
