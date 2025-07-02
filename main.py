@@ -1,73 +1,70 @@
 import os
-import pandas as pd
+from fastapi import FastAPI, Query
+from fastapi.responses import JSONResponse
+from typing import Optional
 from dotenv import load_dotenv
 from motor.motor_asyncio import AsyncIOMotorClient
-from fastapi import FastAPI, Query
 from contextlib import asynccontextmanager
 
-# Load environment variables (like MONGO_URI)
+# Load env variables
 load_dotenv()
 MONGO_URI = os.getenv("MONGO_URI")
 
-# Setup MongoDB client
+# Connect to Atlas
 client = AsyncIOMotorClient(MONGO_URI)
-db = client["Shopcart"]
-cart_collection = db["carts"]
+db = client["fastapi_auth"]
 products_collection = db["products"]
-users_collection = db["users"]
-orders_collection = db["orders"]
 
-# Load the CSV file for Flipkart mobile data
-file_path = os.path.join(os.path.dirname(__file__), "data", "Flipkart_Mobiles.csv")
-try:
-    df = pd.read_csv(file_path)
-    print("✅ CSV loaded successfully.")
-except FileNotFoundError:
-    df = None
-    print(f"❌ CSV file not found at {file_path}.")
-
-# Lifespan event handler for MongoDB connectivity
+# Handle lifespan startup tasks
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         await client.admin.command("ping")
-        print("✅ Connected to MongoDB!")
+        print("✅ Connected to MongoDB Atlas!")
     except Exception as e:
         print(f"❌ MongoDB connection failed: {e}")
     yield
 
-# FastAPI app instance
+# FastAPI instance
 app = FastAPI(lifespan=lifespan)
 
-# Home route
+# Root route
 @app.get("/home")
 def home():
-    return {"message": "Search API is running!"}
+    return {"message": "Search API is running from MongoDB Atlas!"}
 
-# CSV-based product search with Product Photo field included
+# Search endpoint
 @app.get("/search/")
-def search_mobiles(
-    brand: str = Query(None, description="Search for a brand"),
-    model: str = Query(None, description="Search for a model"),
-    color: str = Query(None, description="Search for a color"),
-    sort_by: str = Query(None, description="Sort by 'price' or 'rating'"),
-    order: str = Query("asc", description="Sort order: 'asc' or 'desc'")
+async def search_mobiles(
+    brand: Optional[str] = Query(None, description="Search by brand"),
+    model: Optional[str] = Query(None, description="Search by model"),
+    color: Optional[str] = Query(None, description="Search by color"),
+    sort_by: Optional[str] = Query(None, description="Sort by 'price' or 'rating'"),
+    order: Optional[str] = Query("asc", description="Sort order: 'asc' or 'desc'")
 ):
-    if df is None:
-        return {"error": "CSV file missing or not loaded correctly."}
+    query = {}
 
-    result = df.copy()
+    if brand:
+        query["Brand"] = {"$regex": brand, "$options": "i"}
+    if model:
+        query["Model"] = {"$regex": model, "$options": "i"}
+    if color:
+        query["Color"] = {"$regex": color, "$options": "i"}
 
-    filters = {"Brand": brand, "Model": model, "Color": color}
-    for column, value in filters.items():
-        if value:
-            result = result[result[column].str.contains(value, case=False, na=False)]
+    sort_field = None
+    if sort_by == "price":
+        sort_field = "Selling Price"
+    elif sort_by == "rating":
+        sort_field = "Rating"
 
-    if sort_by in ["price", "rating"]:
-        column = "Selling Price" if sort_by == "price" else "Rating"
-        result = result.sort_values(by=column, ascending=(order == "asc"))
+    cursor = products_collection.find(query)
+    if sort_field:
+        cursor = cursor.sort(sort_field, 1 if order == "asc" else -1)
 
-    result = result.dropna()
+    results = []
+    async for doc in cursor:
+        doc["_id"] = str(doc["_id"])  # Convert ObjectId to string for JSON serialization
+        doc["Product Photo"] = doc.get("Product Photo", "")
+        results.append(doc)
 
-    # ✅ Ensure Product Photo is included in response
-    return result.to_dict(orient="records")
+    return JSONResponse(content=results)
