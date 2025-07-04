@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from typing import Optional
 from pydantic import EmailStr
+from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
@@ -100,6 +101,9 @@ class RefreshRequest(BaseModel):
 class CartItem(BaseModel):
     product_id: str
     quantity: int = 1
+
+class RemoveItem(BaseModel):
+    product_id: str
 
 
 # Utilities
@@ -288,10 +292,12 @@ async def add_to_cart(item: CartItem, current_user: dict = Depends(get_current_u
 # Remove item from cart
 
 @app.post("/cart/remove")
-async def remove_from_cart(product_id: str, current_user: dict = Depends(get_current_user)):
+async def remove_from_cart(item: RemoveItem, current_user: dict = Depends(get_current_user)):
     await users_collection.update_one(
         {"email": current_user["email"]},
-        {"$pull": {"cart": product_id}}
+        {"$pull": {"cart": {"product_id": item.product_id}}}
+
+
     )
     return {"message": "Product removed from cart"}
 
