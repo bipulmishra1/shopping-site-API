@@ -216,8 +216,11 @@ async def search_mobiles(
     model: Optional[str] = Query(None),
     color: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
-    order: Optional[str] = Query("asc")
-):
+    order: Optional[str] = Query("asc"),
+    page: int == Query(1, gt=0),
+    limit: int = Query(10,gt=0)
+):    
+    skip=(page - 1) * limit
     query = {}
     if brand:
         query["Brand"] = {"$regex": brand, "$options": "i"}
@@ -232,7 +235,7 @@ async def search_mobiles(
     elif sort_by == "rating":
         sort_field = "Rating"
 
-    cursor = products_collection.find(query)
+    cursor = products_collection.find(query).skip(skip).limit(limit)
     if sort_field:
         cursor = cursor.sort(sort_field, 1 if order == "asc" else -1)
 
