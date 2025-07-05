@@ -216,6 +216,10 @@ async def search_mobiles(
     model: Optional[str] = Query(None),
     color: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
+    storage: Optional[str] = Query(None),
+    memory: Optional[str] = Query(None),
+    min_price: Optional[int] = Query(None),
+    max_price: Optional[int] = Query(None),
     order: Optional[str] = Query("asc"),
     page: int == Query(1, gt=0),
     limit: int = Query(10,gt=0)
@@ -228,6 +232,16 @@ async def search_mobiles(
         query["Model"] = {"$regex": model, "$options": "i"}
     if color:
         query["Color"] = {"$regex": color, "$options": "i"}
+    if storage:
+        query["Storage"] = storage
+    if memory:
+        query["Memory"] = memory
+    if min_price is not None and max_price is not None:
+        query["Selling Price"] = {"$gte": min_price, "$lt": max_price}
+    elif min_price is not None:
+        query["Selling Price"] = {"$gte": min_price}
+    elif max_price is not None:
+        query["Selling Price"] = {"$lt": max_price}
 
     sort_field = None
     if sort_by == "price":
